@@ -3473,11 +3473,12 @@ func (s *Server) serve(w http.ResponseWriter, r *http.Request, from provider.Pro
 		if !last && c.claudeAccount() && slices.ContainsFunc(cands[i+1:], candidate.claudeAccount) {
 			retell, noRetell = tooBigToRetell(from, body)
 		}
-		if !pass && handsOver(streams, last || noRetell && len(otherThanClaudeAccounts(cands[i+1:])) == 0, wantWhole, from, refusals) {
+		if !pass && handsOver(streams, last || noRetell && len(otherThanClaudeAccounts(cands[i+1:])) == 0, wantWhole, from) {
 			// reasoning that went through as it came, and a refusal after
-			// it with nothing yet said: the next candidate answers in the
-			// same stream (refusalHandover; yhwangl on X)
-			hw.over = &refusalHandover{proto: from, seq: -1}
+			// it with nothing yet said, or a reply that ends saying nothing
+			// at all: the next candidate answers in the same stream
+			// (refusalHandover, yhwangl on X; handOverEmpty, #667)
+			hw.over = &refusalHandover{proto: from, seq: -1, refuse: refusalAsksAgain(refusals + 1)}
 		}
 		// the reasoning's hold, above, once the handover is known
 		hw.thinkingShown = !s.holdsThinking(c, hw.over != nil) || last
@@ -8782,7 +8783,7 @@ func (s *Server) translate(w http.ResponseWriter, r *http.Request, p provider.Pr
 		msg := p.Name + ": " + errEndedShort.Error()
 		return writeError(w, from, 502, msg), msg
 	}
-	if (empty || repliesCounted(actual) && uncounted(col.res.Usage)) && !saidAnything(col.res.Parts) && answersNothing(col.res.Stop) {
+	if (empty || repliesCounted(actual) && uncounted(col.res.Usage)) && !saidAnything(col.res.Parts) && answersNothing(col.res.Stop) && !sideAsk(r.Context()) {
 		msg := p.Name + ": " + emptyReply
 		return writeError(w, from, 502, msg), msg
 	}
@@ -8815,11 +8816,16 @@ const emptyReply = "an empty reply (the model answered nothing; try again)"
 // nothing, or only reasoning, and a STOP — or with no finishReason at all
 // — which went to the agent as a turn ended as it should, content [] and
 // no usage, and the agent's run stopped mid-task (#667). Gemini CLI takes
-// such a stream for an invalid one and asks again. Claude ending a turn
-// with nothing after a tool's result is its answer, so no other
-// protocol's is.
+// such a stream for an invalid one and asks again. A Chat upstream's is
+// no answer either, whatever it counted: catpaw's longcat-2.0 answered
+// 60 requests in a day with 200s that said nothing at all, and
+// workbuddy's hy4free over a thousand in a week that said only their
+// reasoning, and Claude Code took the turn for one answered and stopped
+// its run there, the group's next member never asked. Claude ending a
+// turn with nothing after a tool's result is its answer, so an Anthropic
+// or Responses one isn't failed here but counted (repliesCounted).
 func emptyFails(proto provider.Protocol) bool {
-	return proto == provider.CodeAssist || proto == provider.Gemini
+	return proto == provider.CodeAssist || proto == provider.Gemini || proto == provider.Chat
 }
 
 // repliesCounted tells whether every whole reply in proto counts its tokens:

@@ -722,7 +722,7 @@ func (s *Server) streamTranslated(w http.ResponseWriter, r *http.Request, p prov
 			if held != nil {
 				held()
 			}
-			if (empty || counts && uncounted(this)) && !said && answersNothing(stop) {
+			if (empty || counts && uncounted(this)) && !said && answersNothing(stop) && !sideAsk(r.Context()) {
 				if empties < emptyRetries(w, r.Context()) && r.Context().Err() == nil && !p.PassesErrors() {
 					// asked again here first, for the agent to have the
 					// answer rather than the error: Gemini on a long
@@ -744,6 +744,12 @@ func (s *Server) streamTranslated(w http.ResponseWriter, r *http.Request, p prov
 				// and an agent told it tries again rather than end its
 				// turn (#667); a reply that said nothing has nothing to
 				// go on from, so it isn't continued
+				if h, ok := w.(*holdWriter); ok && h.handOverEmpty() {
+					// what reasoning the client has stays, and the next
+					// candidate's reply follows it in this stream
+					// (handOverEmpty)
+					return 200, ""
+				}
 				failed = p.Name + ": " + emptyReply
 				break
 			}

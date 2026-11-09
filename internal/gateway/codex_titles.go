@@ -148,6 +148,15 @@ func replyCheck(ctx context.Context) func(reply string) string {
 	return f
 }
 
+// sideAsk says a request is one of Codex's side asks that magpie answers
+// itself — a thread's title, its description, a composer prediction — and
+// not a turn of the agent's. A model that answers it with nothing gave no
+// title or prediction, the answer it was asked for, which replyCheck
+// records; it is not the empty reply to fail the caller over (#3358).
+func sideAsk(ctx context.Context) bool {
+	return ctx.Value(titleCheckKey{}) != nil
+}
+
 // codexTitle answers a request for a thread's title as codexTitlesTo
 // says: "off" here, with no title; a model's id by that model, its answer
 // handed back as the {"title": …} Codex asked for. Either way the call is
